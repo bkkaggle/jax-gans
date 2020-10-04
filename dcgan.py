@@ -152,7 +152,7 @@ def main():
             d_loss_real = objax.functional.loss.sigmoid_cross_entropy_logits(
                 discriminator(x, training=True), 1).mean()
 
-            fake_img = generator(z, training=True)
+            fake_img = generator(z, training=False)
             d_loss_fake = objax.functional.loss.sigmoid_cross_entropy_logits(
                 discriminator(fake_img, training=True), 0).mean()
 
