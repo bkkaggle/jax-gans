@@ -106,7 +106,7 @@ class Discriminator(objax.Module):
         x = objax.functional.leaky_relu(x, 0.02)
 
         x = self.out_conv(x)
-        x = objax.functional.sigmoid(x)
+        # x = objax.functional.sigmoid(x)
 
         x = jnp.reshape(x, [-1, 1])
 
@@ -149,11 +149,11 @@ def main():
         d_opt = objax.optimizer.Momentum(discriminator.vars())
 
         def d_loss(x, z):
-            d_loss_real = objax.functional.loss.cross_entropy_logits(
+            d_loss_real = objax.functional.loss.sigmoid_cross_entropy_logits(
                 discriminator(x, training=True), 1).mean()
 
             fake_img = generator(z, training=False)
-            d_loss_fake = objax.functional.loss.cross_entropy_logits(
+            d_loss_fake = objax.functional.loss.sigmoid_cross_entropy_logits(
                 discriminator(fake_img, training=True), 0).mean()
 
             d_loss = d_loss_real + d_loss_fake
@@ -162,7 +162,7 @@ def main():
 
         def g_loss(x, z):
             fake_img = generator(z, training=True)
-            return objax.functional.loss.cross_entropy_logits(discriminator(fake_img, training=False), 1).mean()
+            return objax.functional.loss.sigmoid_cross_entropy_logits(discriminator(fake_img, training=False), 1).mean()
 
         d_gv = objax.GradValues(d_loss, discriminator.vars())
         g_gv = objax.GradValues(g_loss, generator.vars())
