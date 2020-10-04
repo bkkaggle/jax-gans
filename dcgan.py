@@ -152,7 +152,7 @@ def main():
             d_loss_real = objax.functional.loss.sigmoid_cross_entropy_logits(
                 discriminator(x, training=True), 1).mean()
 
-            fake_img = generator(z, training=False)
+            fake_img = generator(z, training=True)
             d_loss_fake = objax.functional.loss.sigmoid_cross_entropy_logits(
                 discriminator(fake_img, training=True), 0).mean()
 
@@ -199,7 +199,7 @@ def main():
                 g_avg_loss += g_loss
                 d_avg_loss += d_loss
 
-                if i % 10 == 0:
+                if i % 1 == 0:
                     wandb.log({"g_loss": g_loss,
                                "d_loss": d_loss}, step=(epoch + 1) * (i + 1))
 
