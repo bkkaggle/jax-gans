@@ -14,38 +14,38 @@ from objax.zoo.dnnet import DNNet
 from objax import random
 
 
-def normal_0_1(shape):
-    return random.normal(shape, mean=0.0, stddev=1.0)
+def normal_0_02(shape):
+    return random.normal(shape, mean=0.0, stddev=0.02)
 
 
 class Generator(objax.Module):
     def __init__(self):
         self.conv_block_1 = objax.nn.Sequential([
             objax.nn.ConvTranspose2D(
-                100, 64*8, k=4, strides=1, padding=objax.constants.ConvPadding.VALID, use_bias=False, w_init=normal_0_1),
+                100, 64*8, k=4, strides=1, padding=objax.constants.ConvPadding.VALID, use_bias=False, w_init=normal_0_02),
             objax.nn.BatchNorm2D(64*8)
         ])
 
         self.conv_block_2 = objax.nn.Sequential([
             objax.nn.ConvTranspose2D(
-                64*8, 64*4, k=4, strides=2, padding=objax.constants.ConvPadding.SAME, use_bias=False, w_init=normal_0_1),
+                64*8, 64*4, k=4, strides=2, padding=objax.constants.ConvPadding.SAME, use_bias=False, w_init=normal_0_02),
             objax.nn.BatchNorm2D(64*4)
         ])
 
         self.conv_block_3 = objax.nn.Sequential([
             objax.nn.ConvTranspose2D(
-                64*4, 64*2, k=4, strides=2, padding=objax.constants.ConvPadding.SAME, use_bias=False, w_init=normal_0_1),
+                64*4, 64*2, k=4, strides=2, padding=objax.constants.ConvPadding.SAME, use_bias=False, w_init=normal_0_02),
             objax.nn.BatchNorm2D(64*2)
         ])
 
         self.conv_block_4 = objax.nn.Sequential([
             objax.nn.ConvTranspose2D(
-                64*2, 64, k=4, strides=2, padding=objax.constants.ConvPadding.SAME, use_bias=False, w_init=normal_0_1),
+                64*2, 64, k=4, strides=2, padding=objax.constants.ConvPadding.SAME, use_bias=False, w_init=normal_0_02),
             objax.nn.BatchNorm2D(64)
         ])
 
         self.out_conv = objax.nn.ConvTranspose2D(
-            64, 3, k=4, strides=2, padding=objax.constants.ConvPadding.SAME, w_init=normal_0_1, use_bias=False)
+            64, 3, k=4, strides=2, padding=objax.constants.ConvPadding.SAME, w_init=normal_0_02, use_bias=False)
 
     def __call__(self, x, training):
         x = self.conv_block_1(x, training=training)
@@ -69,28 +69,28 @@ class Generator(objax.Module):
 class Discriminator(objax.Module):
     def __init__(self):
         self.conv_block_1 = objax.nn.Conv2D(
-            3, 64, k=4, strides=2, padding=objax.constants.ConvPadding.SAME, use_bias=False, w_init=normal_0_1)
+            3, 64, k=4, strides=2, padding=objax.constants.ConvPadding.SAME, use_bias=False, w_init=normal_0_02)
 
         self.conv_block_2 = objax.nn.Sequential([
             objax.nn.Conv2D(64, 64*2, k=4, strides=2,
-                            padding=objax.constants.ConvPadding.SAME, use_bias=False, w_init=normal_0_1),
+                            padding=objax.constants.ConvPadding.SAME, use_bias=False, w_init=normal_0_02),
             objax.nn.BatchNorm2D(64*2)
         ])
 
         self.conv_block_3 = objax.nn.Sequential([
             objax.nn.Conv2D(64*2, 64*4, k=4, strides=2,
-                            padding=objax.constants.ConvPadding.SAME, use_bias=False, w_init=normal_0_1),
+                            padding=objax.constants.ConvPadding.SAME, use_bias=False, w_init=normal_0_02),
             objax.nn.BatchNorm2D(64*4)
         ])
 
         self.conv_block_4 = objax.nn.Sequential([
             objax.nn.Conv2D(64*4, 64*8, k=4, strides=2,
-                            padding=objax.constants.ConvPadding.SAME, use_bias=False, w_init=normal_0_1),
+                            padding=objax.constants.ConvPadding.SAME, use_bias=False, w_init=normal_0_02),
             objax.nn.BatchNorm2D(64*8)
         ])
 
         self.out_conv = objax.nn.Conv2D(
-            64*8, 1, k=4, strides=1, padding=objax.constants.ConvPadding.VALID, w_init=normal_0_1, use_bias=False)
+            64*8, 1, k=4, strides=1, padding=objax.constants.ConvPadding.VALID, w_init=normal_0_02, use_bias=False)
 
     def __call__(self, x, training):
         x = self.conv_block_1(x)
