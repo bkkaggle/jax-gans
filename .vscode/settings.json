@@ -1,0 +1,8 @@
+{
+	"python.pythonPath": "/Users/bilal/miniconda3/envs/pytorch/bin/python",
+	"python.linting.enabled": true,
+	"python.analysis.diagnosticSeverityOverrides": {
+		"reportUnboundVariable": "none"
+	},
+	"cmake.configureOnOpen": false
+}
