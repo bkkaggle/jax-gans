@@ -4,6 +4,7 @@ from tqdm import tqdm
 
 import numpy as np
 import tensorflow_datasets as tfds
+import wandb
 
 import jax.numpy as jnp
 
@@ -113,6 +114,8 @@ class Discriminator(objax.Module):
 
 
 def main():
+    wandb.init(project="jax-gans")
+
     DATA_DIR = os.path.join(os.environ['HOME'], 'TFDS')
     data = tfds.as_numpy(
         tfds.load(name='mnist', batch_size=-1, data_dir=DATA_DIR))
@@ -182,16 +185,23 @@ def main():
             g_avg_loss = 0
 
             shuffle_idx = np.random.permutation(train.image.shape[0])
-            for it in tqdm(range(0, train.image.shape[0], batch)):
+            for i, it in tqdm(enumerate(range(0, train.image.shape[0], batch))):
                 sel = shuffle_idx[it: it + batch]
 
                 z = random.normal([batch, 100, 1, 1])
                 img = train.image[sel]
 
-                g_avg_loss += float(g_train_op(
+                d_loss = float(d_train_op(
                     train.image[sel], z)[0]) * len(sel)
-                d_avg_loss += float(d_train_op(
+                g_loss = float(g_train_op(
                     train.image[sel], z)[0]) * len(sel)
+
+                g_avg_loss += g_loss
+                d_avg_loss += d_loss
+
+                if i % 10 == 0:
+                    wandb.log({"g_loss": g_loss,
+                               "d_loss": d_loss}, step=(epoch + 1) * (i + 1))
 
             d_avg_loss /= it + len(sel)
             g_avg_loss /= it + len(sel)
