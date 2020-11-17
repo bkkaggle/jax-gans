@@ -13,6 +13,7 @@
 ## todo
 
 - fid
+- make tfrecords for tpu training
 
 ## structure
 
@@ -87,3 +88,4 @@
 - councilgan uses a prob of 0.5 on the random perspective aug (https://github.com/Onr/Council-GAN/blob/7fe8f8a72ab1b00d4024dd09f414f53781f27eaa/utils.py#L170) while acl-gan doesn't(https://github.com/hyperplane-lab/ACL-GAN/blob/de319019a5c3cbf48a786b8248aaca21d39cbda1/utils.py#L108)
 - converting from np -> torch -> pil -> torch -> np takes 300us
 - color jitter and random perspective uses 700us
+- training on un-augmented data means that it overfits on 3k images at 32x32 within a few hundred iterations with large batch sizes.
