@@ -1,73 +1,16 @@
-import os
-import argparse
-from glob import glob
-from functools import partial
-
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-
-import cv2
-from PIL import Image
-
-import wandb
+from functools import partial
 
 import jax
 import jax.numpy as jnp
 import flax
 
-import torch
-import torchvision.transforms as transforms
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-
-class GANDataset(torch.utils.data.Dataset):
-    def __init__(self, args):
-        self.args = args
-
-        self.paths_a = glob('./data/trainA/*.jpg')
-        self.paths_b = glob('./data/trainB/*.jpg')
-
-        self.imgs_a = np.zeros(
-            (len(self.paths_a), 32, 32, 3), dtype=np.float32)
-        for i, path in tqdm(enumerate(self.paths_a)):
-            img = np.asarray(Image.open(path)) / 255.0
-            img = cv2.resize(img, dsize=(
-                32, 32), interpolation=cv2.INTER_CUBIC).reshape(1, 32, 32, 3)
-            self.imgs_a[i] = img
-
-        self.imgs_b = np.zeros(
-            (len(self.paths_b), 32, 32, 3), dtype=np.float32)
-        for i, path in tqdm(enumerate(self.paths_b)):
-            img = np.asarray(Image.open(path)) / 255.0
-            img = cv2.resize(img, dsize=(
-                32, 32), interpolation=cv2.INTER_CUBIC).reshape(1, 32, 32, 3)
-            self.imgs_b[i] = img
-
-        self.transforms = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.ToPILImage(),
-            transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(hue=0.15),
-            transforms.RandomGrayscale(p=0.25),
-            transforms.RandomRotation(35),
-            transforms.RandomPerspective(distortion_scale=0.35),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ])
-
-    def __len__(self):
-        return len(self.paths_a)
-
-    def __getitem__(self, index):
-        img_a = self.imgs_a[index]
-        img_b = self.imgs_b[index]
-
-        img_a = self.transforms(img_a).numpy().transpose(1, 2, 0)
-        img_b = self.transforms(img_b).numpy().transpose(1, 2, 0)
-
-        return img_a, img_b
+import wandb
 
 
 def shard(xs):
@@ -102,7 +45,7 @@ class Generator(flax.nn.Module):
         x = flax.nn.relu(x)
 
         x = flax.nn.ConvTranspose(
-            x, features=3, kernel_size=(4, 4), strides=(1, 1), padding='SAME', bias=False)
+            x, features=1, kernel_size=(4, 4), strides=(1, 1), padding='SAME', bias=False)
         return jnp.tanh(x)
 
 
@@ -137,9 +80,24 @@ class Discriminator(flax.nn.Module):
         return x
 
 
+def make_dataset(batch_size, seed=1):
+    mnist = tfds.load("mnist")
+
+    def _preprocess(sample):
+        image = tf.image.convert_image_dtype(sample["image"], tf.float32)
+        image = tf.image.resize(image, (32, 32))
+        return 2.0 * image - 1.0
+
+    ds = mnist["train"]
+    ds = ds.map(map_func=_preprocess,
+                num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    ds = ds.shuffle(10 * batch_size, seed=seed).repeat().batch(batch_size)
+    return iter(tfds.as_numpy(ds))
+
+
 @jax.vmap
 def bce_logits_loss(logit, label):
-    return - ((label * jax.nn.log_sigmoid(logit)) + ((1 - label) * jax.nn.log_sigmoid(1 - logit)))
+    return jnp.maximum(logit, 0) - logit * label + jnp.log(1 + jnp.exp(-jnp.abs(logit)))
 
 
 def loss_g(generator, discriminator, batch, rng, state_g, state_d):
@@ -197,12 +155,10 @@ def train_step(rng, state_g, state_d, optimizer_g, optimizer_d, batch):
     return rng, state_g, state_d, optimizer_g, optimizer_d, d_loss, g_loss
 
 
-def main(args):
+def main():
     wandb.init(project='jax-gans')
 
-    dataset = GANDataset(args)
-    train_dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=2, shuffle=True, num_workers=4)
+    dataset = make_dataset(batch_size=2)
 
     rng = jax.random.PRNGKey(42)
     rng, rng_g, rng_d = jax.random.split(rng, 3)
@@ -214,7 +170,7 @@ def main(args):
 
     with flax.nn.stateful() as state_d:
         _, initial_params_d = Discriminator.init_by_shape(
-            rng_d, [((1, 32, 32, 3), jnp.float32)], training=True)
+            rng_d, [((1, 32, 32, 1), jnp.float32)], training=True)
         discriminator = flax.nn.Model(Discriminator, initial_params_d)
 
     optimizer_g = flax.optim.Adam(
@@ -230,44 +186,30 @@ def main(args):
 
     rngs = jax.random.split(rng, num=jax.local_device_count())
 
-    for epoch in range(100):
-        for i, (img_a, img_b) in tqdm(enumerate(train_dataloader)):
-            img_a = shard(img_a.numpy())
-            img_b = shard(img_b.numpy())
+    for i in tqdm(range(2000)):
+        batch = next(dataset)
+        batch = shard(batch)
 
-            rngs, state_g, state_d, optimizer_g, optimizer_d, d_loss, g_loss = train_step(
-                rngs, state_g, state_d, optimizer_g, optimizer_d, img_a)
+        rngs, state_g, state_d, optimizer_g, optimizer_d, d_loss, g_loss = train_step(
+            rngs, state_g, state_d, optimizer_g, optimizer_d, batch)
 
-            if i % 10 == 0:
-                to_log = {'g_loss': float(jnp.mean(g_loss)),
-                          'd_loss': float(jnp.mean(d_loss))}
-                if i % 500 == 0:
-                    rng, rng_sample = jax.random.split(rng)
-                    z = jax.random.normal(rng_sample, shape=(1, 1, 1, 100))
+        if i % 10 == 0:
+            to_log = {'g_loss': float(jnp.mean(g_loss)),
+                      'd_loss': float(jnp.mean(d_loss))}
+            if i % 500 == 0:
+                rng, rng_sample = jax.random.split(rng)
+                z = jax.random.normal(rng_sample, shape=(1, 1, 1, 100))
 
-                    model = flax.jax_utils.unreplicate(optimizer_g.target)
-                    state_temp = flax.jax_utils.unreplicate(state_g)
-                    with flax.nn.stateful(state_temp) as state_temp:
-                        samples = model(z, training=False)
+                model = flax.jax_utils.unreplicate(optimizer_g.target)
+                state_temp = flax.jax_utils.unreplicate(state_g)
+                with flax.nn.stateful(state_temp) as state_temp:
+                    samples = model(z, training=False)
 
-                    img = jnp.reshape((samples + 1) / 2, [32, 32, 3])
-                    to_log['img'] = wandb.Image(np.array(img))
+                img = jnp.reshape((samples + 1) / 2, [32, 32])
+                to_log['img'] = wandb.Image(np.array(img))
 
-                wandb.log(to_log)
+            wandb.log(to_log)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument('--debug', default=False, action="store_true")
-
-    args = parser.parse_args()
-
-    if args.debug:
-        import ptvsd
-        ptvsd.enable_attach(address=('localhost', 5678),
-                            redirect_output=True)
-        ptvsd.wait_for_attach()
-        breakpoint()
-
-    main(args)
+    main()

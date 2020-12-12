@@ -13,7 +13,7 @@
 ## todo
 
 - fid
-- make tfrecords for tpu training
+- make tfrecords for tpu training?
 
 ## structure
 

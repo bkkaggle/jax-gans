@@ -4,5 +4,6 @@
 	"python.analysis.diagnosticSeverityOverrides": {
 		"reportUnboundVariable": "none"
 	},
-	"cmake.configureOnOpen": false
+	"cmake.configureOnOpen": false,
+	"discord.enabled": false
 }
