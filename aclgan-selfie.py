@@ -254,37 +254,53 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    training: bool
-
     @nn.compact
     def __call__(self, x):
-        x = nn.Conv(features=64, kernel_size=(
-            4, 4), strides=(2, 2), padding='SAME', use_bias=False)(x)
+        x = jnp.pad(x, [(1, 1), (1, 1), (0, 0)], mode='constant')
         x = nn.leaky_relu(x, negative_slope=0.2)
+        x = nn.Conv(features=64, kernel_size=(4, 4),
+                    strides=(2, 2), padding='VALID')(x)
 
+        x = jnp.pad(x, [(1, 1), (1, 1), (0, 0)], mode='constant')
+        x = nn.leaky_relu(x, negative_slope=0.2)
         x = nn.Conv(features=64*2, kernel_size=(4, 4),
-                    strides=(2, 2), padding='SAME', use_bias=False)(x)
-        x = nn.BatchNorm(
-            use_running_average=not self.training, momentum=0.9)(x)
-        x = nn.leaky_relu(x, negative_slope=0.2)
+                    strides=(2, 2), padding='VALID')(x)
 
-        x = nn.Conv(features=64*4, kernel_size=(4, 4),
-                    strides=(2, 2), padding='SAME', use_bias=False)(x)
-        x = nn.BatchNorm(
-            use_running_average=not self.training, momentum=0.9)(x)
+        x = jnp.pad(x, [(1, 1), (1, 1), (0, 0)], mode='constant')
         x = nn.leaky_relu(x, negative_slope=0.2)
+        x = nn.Conv(features=64*2*2, kernel_size=(4, 4),
+                    strides=(2, 2), padding='VALID')(x)
 
-        x = nn.Conv(features=64*8, kernel_size=(4, 4),
-                    strides=(2, 2), padding='SAME', use_bias=False)(x)
-        x = nn.BatchNorm(
-            use_running_average=not self.training, momentum=0.9)(x)
+        x = jnp.pad(x, [(1, 1), (1, 1), (0, 0)], mode='constant')
         x = nn.leaky_relu(x, negative_slope=0.2)
+        x = nn.Conv(features=64*2*2*2, kernel_size=(4, 4),
+                    strides=(2, 2), padding='VALID')(x)
 
-        x = nn.Conv(features=1, kernel_size=(
-            1, 1), strides=(4, 4), padding='VALID', use_bias=False)(x)
-        x = jnp.reshape(x, [x.shape[0], -1])
+        x = nn.Conv(features=1, kernel_size=(1, 1),
+                    strides=(1, 1), padding="VALID")(x)
 
         return x
+
+
+class MSDiscriminator(nn.Module):
+    @nn.compact
+    def __call__(self, x):
+        outputs = []
+
+        out = Discriminator()(x)
+        outputs.append(out)
+
+        x = jax.image.resize(
+            x, (x.shape[0]/2, x.shape[1]/2, 3), method=jax.image.ResizeMethod.NEAREST)
+        out = Discriminator()(x)
+        outputs.append(out)
+
+        x = jax.image.resize(
+            x, (x.shape[0]/2, x.shape[1]/2, 3), method=jax.image.ResizeMethod.NEAREST)
+        out = Discriminator()(x)
+        outputs.append(out)
+
+        return outputs
 
 
 @jax.vmap

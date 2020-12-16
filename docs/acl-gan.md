@@ -98,3 +98,4 @@
 - color jitter and random perspective uses ~6ms per image
 - training on un-augmented data means that it overfits on 3k images at 32x32 within a few hundred iterations with large batch sizes.
 - currently using constant zero padding instead of reflect padding, wait until reflect padding is merged in then use (https://github.com/google/jax/issues/5010)
+- currently using jax.image.resize in the multiscale discriminator until i can figure out how to use avgpool in a vmap (https://github.com/google/flax/discussions/738)
