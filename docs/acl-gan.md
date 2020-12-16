@@ -4,6 +4,7 @@
 - Arxiv: https://arxiv.org/pdf/2003.04858.pdf
 
 - dataset: https://drive.google.com/file/d/1xOWj1UVgp6NKMT3HbPhBbtq2A4EDkghF/view
+    - 3400 images
 
 ## steps
 
@@ -11,6 +12,8 @@
 - unzip
 
 ## todo
+
+- anything with AdaIN means and variances being passed into modules as second and third parameters not getting tracked by autograd?
 
 - fid
 - make tfrecords for tpu training?
@@ -81,11 +84,17 @@
         - random rotation 35deg
         - random perspective transform: 0.35; prob 0.5
 - its unpaired so you don't need to have paired augmentations
+- bce with logits loss is a little different from plain bce loss because of the 
+- adain norm
+    - mlp outputs a list of concatenated means and stddevs for each feature in the residual blocks
+    - residual blocks have same dimensionality to make it easier to implement
+    - adain takes the splitted means and stddevs and uses it to rescale inputs
 
 ## replication
 
 - councilgan only trains on original images for the last 100k iterations
 - councilgan uses a prob of 0.5 on the random perspective aug (https://github.com/Onr/Council-GAN/blob/7fe8f8a72ab1b00d4024dd09f414f53781f27eaa/utils.py#L170) while acl-gan doesn't(https://github.com/hyperplane-lab/ACL-GAN/blob/de319019a5c3cbf48a786b8248aaca21d39cbda1/utils.py#L108)
 - converting from np -> torch -> pil -> torch -> np takes 300us
-- color jitter and random perspective uses 700us
+- color jitter and random perspective uses ~6ms per image
 - training on un-augmented data means that it overfits on 3k images at 32x32 within a few hundred iterations with large batch sizes.
+- currently using constant zero padding instead of reflect padding, wait until reflect padding is merged in then use (https://github.com/google/jax/issues/5010)

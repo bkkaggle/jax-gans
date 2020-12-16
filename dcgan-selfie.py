@@ -2,6 +2,7 @@ import os
 import argparse
 from glob import glob
 from functools import partial
+from dataclasses import dataclass
 
 import numpy as np
 from tqdm import tqdm
@@ -22,6 +23,56 @@ import torch
 import torchvision.transforms as transforms
 import tensorflow as tf
 import tensorflow_datasets as tfds
+
+
+class GANDataset(torch.utils.data.Dataset):
+    def __init__(self, args):
+        self.args = args
+
+        self.paths_a = glob('./data/trainA/*.jpg')
+        self.paths_b = glob('./data/trainB/*.jpg')
+
+        self.imgs_a = np.zeros(
+            (len(self.paths_a), 32, 32, 3), dtype=np.float32)
+        for i, path in tqdm(enumerate(self.paths_a)):
+            img = np.asarray(Image.open(path)) / 255.0
+            img = cv2.resize(img, dsize=(
+                32, 32), interpolation=cv2.INTER_CUBIC).reshape(1, 32, 32, 3)
+            self.imgs_a[i] = img
+
+        self.imgs_b = np.zeros(
+            (len(self.paths_b), 32, 32, 3), dtype=np.float32)
+        for i, path in tqdm(enumerate(self.paths_b)):
+            img = np.asarray(Image.open(path)) / 255.0
+            img = cv2.resize(img, dsize=(
+                32, 32), interpolation=cv2.INTER_CUBIC).reshape(1, 32, 32, 3)
+            self.imgs_b[i] = img
+
+        self.transforms = transforms.Compose([
+            # transforms.ToTensor(),
+            # transforms.ToPILImage(),
+            # transforms.RandomHorizontalFlip(),
+            # transforms.ColorJitter(hue=0.15),
+            # transforms.RandomGrayscale(p=0.25),
+            # transforms.RandomRotation(35),
+            # transforms.RandomPerspective(distortion_scale=0.35),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        ])
+
+    def __len__(self):
+        return len(self.paths_a)
+
+    def __getitem__(self, index):
+        img_a = self.imgs_a[index]
+        img_b = self.imgs_b[index]
+
+        img_a = self.transforms(img_a).numpy().transpose(1, 2, 0)
+        img_b = self.transforms(img_b).numpy().transpose(1, 2, 0)
+        # img_a = img_a.transpose(1, 2, 0)
+        # img_b = img_b.transpose(1, 2, 0)
+
+        return img_a, img_b
 
 
 def shard(xs):
@@ -58,7 +109,7 @@ class Generator(nn.Module):
             use_running_average=not self.training, momentum=0.9)(x)
         x = nn.relu(x)
 
-        x = nn.ConvTranspose(features=1, kernel_size=(
+        x = nn.ConvTranspose(features=3, kernel_size=(
             4, 4), strides=(1, 1), padding='SAME', use_bias=False)(x)
         return jnp.tanh(x)
 
@@ -157,25 +208,12 @@ def train_step(rng, variables_g, variables_d, optimizer_g, optimizer_d, batch):
     return rng, variables_g, variables_d, optimizer_g, optimizer_d, d_loss, g_loss
 
 
-def make_dataset(batch_size, seed=1):
-    mnist = tfds.load("mnist")
-
-    def _preprocess(sample):
-        image = tf.image.convert_image_dtype(sample["image"], tf.float32)
-        image = tf.image.resize(image, (32, 32))
-        return 2.0 * image - 1.0
-
-    ds = mnist["train"]
-    ds = ds.map(map_func=_preprocess,
-                num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    ds = ds.shuffle(10 * batch_size, seed=seed).repeat().batch(batch_size)
-    return iter(tfds.as_numpy(ds))
-
-
 def main(args):
-    wandb.init(project='flax-dcgan-mnist')
+    wandb.init(project='flax-dcgan-selfie')
 
-    dataset = make_dataset(batch_size=args.batch_size)
+    dataset = GANDataset({})
+    train_dataloader = torch.utils.data.DataLoader(
+        dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
 
     rng = jax.random.PRNGKey(42)
     rng, rng_g, rng_d = jax.random.split(rng, 3)
@@ -183,7 +221,7 @@ def main(args):
     init_batch_g = jnp.ones((1, 1, 1, 100), jnp.float32)
     variables_g = Generator(training=True).init(rng_g, init_batch_g)
 
-    init_batch_d = jnp.ones((1, 32, 32, 1), jnp.float32)
+    init_batch_d = jnp.ones((1, 32, 32, 3), jnp.float32)
     variables_d = Discriminator(training=True).init(rng_d, init_batch_d)
 
     optimizer_g = flax.optim.Adam(
@@ -199,17 +237,19 @@ def main(args):
 
     rngs = jax.random.split(rng, num=jax.local_device_count())
 
+    global_step = 0
     for epoch in range(100):
-        for i in tqdm(range(3000 // args.batch_size)):
-            img_a = shard(next(dataset))
+        for i, (img_a, img_b) in tqdm(enumerate(train_dataloader)):
+            img_a = shard(img_a.numpy())
+            img_b = shard(img_b.numpy())
 
             rngs, variables_g, variables_d, optimizer_g, optimizer_d, d_loss, g_loss = train_step(
                 rngs, variables_g, variables_d, optimizer_g, optimizer_d, img_a)
 
-            if i % 10 == 0:
+            if global_step % 10 == 0:
                 to_log = {'g_loss': float(jnp.mean(g_loss)),
                           'd_loss': float(jnp.mean(d_loss))}
-                if i % 500 == 0:
+                if global_step % 100 == 0:
                     rng, rng_sample = jax.random.split(rng)
                     z = jax.random.normal(rng_sample, shape=(1, 1, 1, 100))
 
@@ -220,9 +260,11 @@ def main(args):
                     samples = Generator(training=False).apply(
                         {'params': temp_params_g, 'batch_stats': temp_variables_g['batch_stats']}, z, mutable=False)
 
-                    img = jnp.reshape((samples + 1) / 2, [32, 32])
+                    img = jnp.reshape((samples + 1) / 2, [32, 32, 3])
                     to_log['img'] = wandb.Image(np.array(img))
                 wandb.log(to_log)
+
+            global_step += 1
 
 
 if __name__ == "__main__":
@@ -230,6 +272,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--debug', default=False, action="store_true")
     parser.add_argument('--batch_size', default=8)
+    parser.add_argument('--num_workers', default=0)
 
     args = parser.parse_args()
 
@@ -241,3 +284,10 @@ if __name__ == "__main__":
         breakpoint()
 
     main(args)
+# @dataclass
+# class Data:
+#     batch_size: int
+#     num_workers: int
+
+
+# main(Data(256, 4))
