@@ -207,7 +207,15 @@ class MLP(nn.Module):
 
 class Decoder(nn.Module):
     @nn.compact
-    def __call__(self, x, means, variances):
+    def __call__(self, x, AdaIN_params):
+
+        means = []
+        variances = []
+        for i in range(0, 4*256*2, 256*2):
+            means_variances = AdaIN_params[:, :, i:i+256*2]
+            means.append(means_variances[:, :, :256])
+            variances.append(means_variances[:, :, 256:])
+
         x = ResBlock(padding=1, features=64*2*2, kernel_size=3,
                      strides=1, norm='AdaIN')(x, means[0], variances[0])
         x = ResBlock(padding=1, features=64*2*2, kernel_size=3,
@@ -233,27 +241,7 @@ class Decoder(nn.Module):
         return x
 
 
-class Generator(nn.Module):
-    @nn.compact
-    def __call__(self, x):
-        style = StyleEncoder()(x)
-        content = ContentEncoder()(x)
-
-        AdaIN_params = MLP()(style)
-
-        means = []
-        variances = []
-        for i in range(0, 4*256*2, 256*2):
-            means_variances = AdaIN_params[:, :, i:i+256*2]
-            means.append(means_variances[:, :, :256])
-            variances.append(means_variances[:, :, 256:])
-
-        out = Decoder()(content, means, variances)
-
-        return out
-
-
-class Discriminator(nn.Module):
+class DiscriminatorPart(nn.Module):
     @nn.compact
     def __call__(self, x):
         x = jnp.pad(x, [(1, 1), (1, 1), (0, 0)], mode='constant')
@@ -287,20 +275,33 @@ class MSDiscriminator(nn.Module):
     def __call__(self, x):
         outputs = []
 
-        out = Discriminator()(x)
+        out = DiscriminatorPart()(x)
         outputs.append(out)
 
-        x = jax.image.resize(
-            x, (x.shape[0]/2, x.shape[1]/2, 3), method=jax.image.ResizeMethod.NEAREST)
-        out = Discriminator()(x)
+        x = nn.avg_pool(x, window_shape=(3, 3), strides=(
+            2, 2), padding=((1, 1), (1, 1)))``
+        out = DiscriminatorPart()(x)
         outputs.append(out)
 
-        x = jax.image.resize(
-            x, (x.shape[0]/2, x.shape[1]/2, 3), method=jax.image.ResizeMethod.NEAREST)
-        out = Discriminator()(x)
+        x = nn.avg_pool(x, window_shape=(3, 3), strides=(
+            2, 2), padding=((1, 1), (1, 1)))
+        out = DiscriminatorPart()(x)
         outputs.append(out)
 
         return outputs
+
+
+class Generator(nn.Module):
+    @nn.compact
+    def __call__(self, x):
+        style = StyleEncoder()(x)
+        content = ContentEncoder()(x)
+
+        AdaIN_params = MLP()(style)
+
+        out = Decoder()(content, AdaIN_params)
+
+        return out
 
 
 @jax.vmap
