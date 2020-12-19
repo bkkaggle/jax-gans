@@ -279,7 +279,7 @@ class MSDiscriminator(nn.Module):
         outputs.append(out)
 
         x = nn.avg_pool(x, window_shape=(3, 3), strides=(
-            2, 2), padding=((1, 1), (1, 1)))``
+            2, 2), padding=((1, 1), (1, 1)))
         out = DiscriminatorPart()(x)
         outputs.append(out)
 
