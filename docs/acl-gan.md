@@ -91,6 +91,11 @@
     - mlp outputs a list of concatenated means and stddevs for each feature in the residual blocks
     - residual blocks have same dimensionality to make it easier to implement
     - adain takes the splitted means and stddevs and uses it to rescale inputs
+- alpha in dec is just 1
+- adain style mean and variance network can output negative values so sqrt(-) can be nan, look into more later if there ends up being a problem
+    - temporarily just disabling AdaIN
+- ones are real zeros are fake
+- cant vmap over loss_g since the param dicts aren't vmappable
 
 ## replication
 
