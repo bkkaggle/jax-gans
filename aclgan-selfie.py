@@ -2,6 +2,7 @@ import os
 import argparse
 from glob import glob
 from functools import partial
+from typing import List
 from dataclasses import dataclass
 
 import numpy as np
@@ -34,14 +35,16 @@ class GANDataset(torch.utils.data.Dataset):
             (len(self.paths_a), 64, 64, 3), dtype=np.float32)
         for i, path in tqdm(enumerate(self.paths_a)):
             img = np.asarray(Image.open(path)) / 255.0
-            img = cv2.resize(img, dsize=(64, 64), interpolation=cv2.INTER_CUBIC).reshape(1, 64, 64, 3)
+            img = cv2.resize(img, dsize=(
+                64, 64), interpolation=cv2.INTER_CUBIC).reshape(1, 64, 64, 3)
             self.imgs_a[i] = img
 
         self.imgs_b = np.zeros(
             (len(self.paths_b), 64, 64, 3), dtype=np.float32)
         for i, path in tqdm(enumerate(self.paths_b)):
             img = np.asarray(Image.open(path)) / 255.0
-            img = cv2.resize(img, dsize=(64, 64), interpolation=cv2.INTER_CUBIC).reshape(1, 64, 64, 3)
+            img = cv2.resize(img, dsize=(
+                64, 64), interpolation=cv2.INTER_CUBIC).reshape(1, 64, 64, 3)
             self.imgs_b[i] = img
 
         self.transforms = transforms.Compose([
@@ -496,13 +499,18 @@ def main(args):
         for i, (x_s, x_t) in tqdm(enumerate(train_dataloader)):
             x_s = shard(x_s.numpy())
             x_t = shard(x_t.numpy())
- 
+
             rngs, optimizer_g, optimizer_d, g_loss, d_loss = train_step(
                 optimizer_g, optimizer_d, x_s, x_t, rngs)
 
             if global_step % 10 == 0:
-                #to_log = {'g_loss': float(jnp.mean(g_loss)),
-                #          'd_loss': float(jnp.mean(d_loss))}
+                g_loss = flax.jax_utils.unreplicate(g_loss)
+                d_loss = flax.jax_utils.unreplicate(d_loss)
+
+                if g_loss.ndim > 0 and d_loss.ndim > 0:
+                    to_log = {'g_loss': float(jnp.mean(g_loss)),
+                              'd_loss': float(jnp.mean(d_loss))}
+                    wandb.log(to_log)
                 # if global_step % 100 == 0:
                 #     rng, rng_sample = jax.random.split(rng)
                 #     z = jax.random.normal(rng_sample, shape=(1, 1, 1, 100))
@@ -516,7 +524,7 @@ def main(args):
 
                 #     img = jnp.reshape((samples + 1) / 2, [32, 32, 3])
                 #     to_log['img'] = wandb.Image(np.array(img))
-                #wandb.log(to_log)
+                    # wandb.log(to_log)
 
             global_step += 1
 
@@ -526,7 +534,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--debug', default=False, action="store_true")
     parser.add_argument('--batch_size', type=int, default=8)
-    parser.add_argument('--num_workers', type=int, default=0)
+    parser.add_argument('--num_workers', type=int, default=8)
 
     args = parser.parse_args()
 

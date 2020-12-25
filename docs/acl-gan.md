@@ -13,6 +13,8 @@
 
 ## todo
 
+- replace lists with jax indexing
+
 - anything with AdaIN means and variances being passed into modules as second and third parameters not getting tracked by autograd?
 
 - fid
