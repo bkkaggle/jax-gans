@@ -507,24 +507,23 @@ def main(args):
                 g_loss = flax.jax_utils.unreplicate(g_loss)
                 d_loss = flax.jax_utils.unreplicate(d_loss)
 
-                if g_loss.ndim > 0 and d_loss.ndim > 0:
-                    to_log = {'g_loss': float(jnp.mean(g_loss)),
-                              'd_loss': float(jnp.mean(d_loss))}
-                    wandb.log(to_log)
-                # if global_step % 100 == 0:
-                #     rng, rng_sample = jax.random.split(rng)
-                #     z = jax.random.normal(rng_sample, shape=(1, 1, 1, 100))
+                to_log = {'g_loss': float(jnp.mean(g_loss)),
+                            'd_loss': float(jnp.mean(d_loss))}
 
-                #     temp_params_g = flax.jax_utils.unreplicate(
-                #         optimizer_g.target)
-                #     temp_variables_g = flax.jax_utils.unreplicate(variables_g)
+                if global_step % 10 == 0:
+                    rng, rng_sample = jax.random.split(rng)
+                    z = jax.random.normal(rng_sample, shape=(1, 1, 1, 8))
+                    x = flax.jax_utils.unreplicate(x_s)
 
-                #     samples = Generator(training=False).apply(
-                #         {'params': temp_params_g, 'batch_stats': temp_variables_g['batch_stats']}, z, mutable=False)
+                    g_params_sample = flax.jax_utils.unreplicate(optimizer_g.target)
 
-                #     img = jnp.reshape((samples + 1) / 2, [32, 32, 3])
-                #     to_log['img'] = wandb.Image(np.array(img))
-                    # wandb.log(to_log)
+                    c, _ = G_enc().apply({'params': g_params_sample['g_t_enc']}, x)
+                    sample = G_dec().apply({'params': g_params_sample['g_t_dec']}, c, z)
+
+                    img = jnp.reshape((sample + 1) / 2, [64, 64, 3])
+                    to_log['img'] = wandb.Image(np.array(img))
+
+                wandb.log(to_log)
 
             global_step += 1
 
