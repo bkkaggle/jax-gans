@@ -369,7 +369,7 @@ def loss_g(g_params, d_params, x_s, x_t, rng):
 
     loss = loss_adv + 0.5 * loss_acl + loss_idt
 
-    return loss
+    return loss, {'adv': loss_adv, 'acl': loss_acl, 'idt': loss_idt}
 
 
 def loss_d(d_params, g_params, x_s, x_t, rng):
@@ -414,21 +414,22 @@ def loss_d(d_params, g_params, x_s, x_t, rng):
     fake_acl_labels = [jnp.zeros_like(s_fake_s_logits[0]), jnp.zeros_like(
         s_fake_s_logits[1]), jnp.zeros_like(s_fake_s_logits[2])]
 
-    loss_adv = l2_loss(fake_logits_t, fake_adv_labels) + l2_loss(real_logits_t, real_adv_labels) + (l2_loss(fake_logits_s, fake_adv_labels) +
-                                                                                                    l2_loss(real_logits_s, real_adv_labels) + l2_loss(fake_logits_recon_s, fake_adv_labels) + l2_loss(real_logits_recon_s, real_adv_labels)) / 2
+    loss_adv = l2_loss(fake_logits_t, fake_adv_labels) + l2_loss(real_logits_t, real_adv_labels) + \
+        (l2_loss(fake_logits_s, fake_adv_labels) + l2_loss(real_logits_s, real_adv_labels) +
+         l2_loss(fake_logits_recon_s, fake_adv_labels) + l2_loss(real_logits_recon_s, real_adv_labels)) / 2
     loss_acl = l2_loss(s_fake_s_logits, fake_acl_labels) + \
         l2_loss(s_fake_recon_s_logits, real_acl_labels)
 
     loss = loss_adv + 0.5 * loss_acl
 
-    return loss
+    return loss, {'adv': loss_adv, 'acl': loss_acl}
 
 
 @partial(jax.pmap, axis_name='batch')
 def train_step(optimizer_g, optimizer_d, x_s, x_t, rng):
     rng, rng_g, rng_d = jax.random.split(rng, 3)
 
-    g_loss, g_grad = jax.value_and_grad(loss_g)(
+    (g_loss, g_losses), g_grad = jax.value_and_grad(loss_g, has_aux=True)(
         optimizer_g.target, optimizer_d.target, x_s, x_t, rng_g)
 
     g_loss = jax.lax.pmean(g_loss, axis_name='batch')
@@ -436,14 +437,14 @@ def train_step(optimizer_g, optimizer_d, x_s, x_t, rng):
 
     optimizer_g = optimizer_g.apply_gradient(g_grad)
 
-    d_loss, d_grad = jax.value_and_grad(loss_d)(
+    (d_loss, d_losses), d_grad = jax.value_and_grad(loss_d, has_aux=True)(
         optimizer_d.target, optimizer_g.target, x_s, x_t, rng_d)
     d_loss = jax.lax.pmean(d_loss, axis_name='batch')
     d_grad = jax.lax.pmean(d_grad, axis_name='batch')
 
     optimizer_d = optimizer_d.apply_gradient(d_grad)
 
-    return rng, optimizer_g, optimizer_d, g_loss, d_loss
+    return rng, optimizer_g, optimizer_d, g_losses, d_losses
 
 
 def main(args):
@@ -500,28 +501,52 @@ def main(args):
             x_s = shard(x_s.numpy())
             x_t = shard(x_t.numpy())
 
-            rngs, optimizer_g, optimizer_d, g_loss, d_loss = train_step(
+            rngs, optimizer_g, optimizer_d, g_losses, d_losses = train_step(
                 optimizer_g, optimizer_d, x_s, x_t, rngs)
 
             if global_step % 10 == 0:
-                g_loss = flax.jax_utils.unreplicate(g_loss)
-                d_loss = flax.jax_utils.unreplicate(d_loss)
+                g_losses = flax.jax_utils.unreplicate(g_losses)
+                d_losses = flax.jax_utils.unreplicate(d_losses)
 
-                to_log = {'g_loss': float(jnp.mean(g_loss)),
-                            'd_loss': float(jnp.mean(d_loss))}
+                to_log = {'g_loss_adv': float(jnp.mean(g_losses['adv'])),
+                          'g_loss_acl': float(jnp.mean(g_losses['acl'])),
+                          'g_loss_idt': float(jnp.mean(g_losses['idt'])),
+                          'd_loss_adv': float(jnp.mean(d_losses['adv'])),
+                          'd_loss_acl': float(jnp.mean(d_losses['adv'])), }
 
                 if global_step % 10 == 0:
-                    rng, rng_sample = jax.random.split(rng)
-                    z = jax.random.normal(rng_sample, shape=(1, 1, 1, 8))
-                    x = flax.jax_utils.unreplicate(x_s)
+                    rng, rng_s, rng_t = jax.random.split(rng, num=3)
+                    z_s = jax.random.normal(rng_s, shape=(1, 1, 1, 8))
+                    z_t = jax.random.normal(rng_t, shape=(1, 1, 1, 8))
+                    x_s = flax.jax_utils.unreplicate(
+                        x_s)[0].reshape(1, 64, 64, 3)
+                    x_t = flax.jax_utils.unreplicate(
+                        x_t)[0].reshape(1, 64, 64, 3)
 
-                    g_params_sample = flax.jax_utils.unreplicate(optimizer_g.target)
+                    g_params_sample = flax.jax_utils.unreplicate(
+                        optimizer_g.target)
 
-                    c, _ = G_enc().apply({'params': g_params_sample['g_t_enc']}, x)
-                    sample = G_dec().apply({'params': g_params_sample['g_t_dec']}, c, z)
+                    c_s, _ = G_enc().apply(
+                        {'params': g_params_sample['g_s_enc']}, x_t)
+                    sample_s = G_dec().apply(
+                        {'params': g_params_sample['g_s_dec']}, c_s, z_s)
 
-                    img = jnp.reshape((sample + 1) / 2, [64, 64, 3])
-                    to_log['img'] = wandb.Image(np.array(img))
+                    c_t, _ = G_enc().apply(
+                        {'params': g_params_sample['g_t_enc']}, x_s)
+                    sample_t = G_dec().apply(
+                        {'params': g_params_sample['g_t_dec']}, c_t, z_t)
+
+                    x_s = jnp.reshape((x_s + 1) / 2, [64, 64, 3])
+                    x_t = jnp.reshape((x_t + 1) / 2, [64, 64, 3])
+
+                    sample_s = jnp.reshape((sample_s + 1) / 2, [64, 64, 3])
+                    sample_t = jnp.reshape((sample_t + 1) / 2, [64, 64, 3])
+
+                    to_log['x_s'] = wandb.Image(np.array(x_s))
+                    to_log['x_t'] = wandb.Image(np.array(x_t))
+
+                    to_log['sample_s'] = wandb.Image(np.array(sample_s))
+                    to_log['sample_t'] = wandb.Image(np.array(sample_t))
 
                 wandb.log(to_log)
 
@@ -551,4 +576,4 @@ if __name__ == "__main__":
 #     num_workers: int
 
 
-# main(Data(256, 4))
+# main(Data(8, 8))
