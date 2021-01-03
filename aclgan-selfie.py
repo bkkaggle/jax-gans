@@ -419,8 +419,8 @@ def loss_d(d_params, g_params, x_s, x_t, rng):
 
 
 @partial(jax.pmap, axis_name='batch')
-def train_step(optimizer_g, optimizer_d, x_s, x_t, rng):
-    rng, rng_g, rng_d = jax.random.split(rng, 3)
+def g_train(optimizer_g, optimizer_d, x_s, x_t, rng):
+    rng, rng_g = jax.random.split(rng)
 
     (g_loss, g_losses), g_grad = jax.value_and_grad(loss_g, has_aux=True)(
         optimizer_g.target, optimizer_d.target, x_s, x_t, rng_g)
@@ -430,6 +430,13 @@ def train_step(optimizer_g, optimizer_d, x_s, x_t, rng):
 
     optimizer_g = optimizer_g.apply_gradient(g_grad)
 
+    return rng, optimizer_g, optimizer_d, g_losses
+
+
+@partial(jax.pmap, axis_name='batch')
+def d_train(optimizer_g, optimizer_d, x_s, x_t, rng):
+    rng, rng_d = jax.random.split(rng)
+
     (d_loss, d_losses), d_grad = jax.value_and_grad(loss_d, has_aux=True)(
         optimizer_d.target, optimizer_g.target, x_s, x_t, rng_d)
     d_loss = jax.lax.pmean(d_loss, axis_name='batch')
@@ -437,7 +444,7 @@ def train_step(optimizer_g, optimizer_d, x_s, x_t, rng):
 
     optimizer_d = optimizer_d.apply_gradient(d_grad)
 
-    return rng, optimizer_g, optimizer_d, g_losses, d_losses
+    return rng, optimizer_g, optimizer_d, d_losses
 
 
 def main(args):
@@ -494,8 +501,13 @@ def main(args):
             x_s = shard(x_s.numpy())
             x_t = shard(x_t.numpy())
 
-            rngs, optimizer_g, optimizer_d, g_losses, d_losses = train_step(
-                optimizer_g, optimizer_d, x_s, x_t, rngs)
+            if global_step % 1 == 0:
+                rngs, optimizer_g, optimizer_d, d_losses = d_train(
+                    optimizer_g, optimizer_d, x_s, x_t, rngs)
+
+            if global_step % 2 == 0:
+                rngs, optimizer_g, optimizer_d, g_losses = g_train(
+                    optimizer_g, optimizer_d, x_s, x_t, rngs)
 
             if global_step % 10 == 0:
                 g_losses = flax.jax_utils.unreplicate(g_losses)
