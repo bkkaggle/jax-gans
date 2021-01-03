@@ -209,21 +209,14 @@ class Decoder(nn.Module):
     @nn.compact
     def __call__(self, x, AdaIN_params):
 
-        means = []
-        variances = []
-        for i in range(0, 4*256*2, 256*2):
-            means_variances = AdaIN_params[:, :, :, i:i+256*2]
-            means.append(means_variances[:, :, :, :256])
-            variances.append(means_variances[:, :, :, 256:])
-
         x = ResBlock(padding=1, features=64*2*2, kernel_size=3,
-                     strides=1, norm='AdaIN')(x, means[0], variances[0])
+                     strides=1, norm='AdaIN')(x, AdaIN_params[:, :, :, :256], AdaIN_params[:, :, :, 256:256*2])
         x = ResBlock(padding=1, features=64*2*2, kernel_size=3,
-                     strides=1, norm='')(x, means[1], variances[1])
+                     strides=1, norm='')(x, AdaIN_params[:, :, :, 256*2:256*2+256], AdaIN_params[:, :, :, 256*2+256:256*4])
         x = ResBlock(padding=1, features=64*2*2, kernel_size=3,
-                     strides=1, norm='')(x, means[2], variances[2])
+                     strides=1, norm='')(x, AdaIN_params[:, :, :, 256*4:256*4+256], AdaIN_params[:, :, :, 256*4+256:256*6])
         x = ResBlock(padding=1, features=64*2*2, kernel_size=3,
-                     strides=1, norm='')(x, means[3], variances[3])
+                     strides=1, norm='')(x, AdaIN_params[:, :, :, 256*6:256*6+256], AdaIN_params[:, :, :, 256*6+256:256*8])
 
         x = jax.image.resize(
             x, (x.shape[0], x.shape[1]*2, x.shape[2]*2, x.shape[3]), method=jax.image.ResizeMethod.NEAREST)
