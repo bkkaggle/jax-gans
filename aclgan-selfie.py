@@ -98,7 +98,8 @@ class AdaIN(nn.Module):
         normalized_content = (content - content_mu) / \
             jnp.sqrt(content_sigma_2 + 1e-5)
 
-        return normalized_content * jnp.sqrt(style_var + 1e-5) + style_mean
+        return normalized_content * \
+            jnp.sqrt(style_var + 1e-5) + style_mean
 
 
 class Block(nn.Module):
@@ -115,8 +116,8 @@ class Block(nn.Module):
 
         if self.norm == "IN":
             x = IN()(x)
-        # elif self.norm == 'AdaIN' and means is not None and variances is not None:
-        #     x = AdaIN()(x, means, variances)
+        elif self.norm == 'AdaIN' and means is not None and variances is not None:
+            x = AdaIN()(x, means, variances)
 
         x = nn.relu(x)
         x = nn.Conv(features=self.features, kernel_size=(self.kernel_size, self.kernel_size),
@@ -201,6 +202,7 @@ class MLP(nn.Module):
         x = nn.Dense(features=256, use_bias=True)(x)
         x = nn.relu(x)
         x = nn.Dense(features=4*256*2, use_bias=True)(x)
+        x = nn.relu(x)
 
         return x
 

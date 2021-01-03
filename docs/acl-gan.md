@@ -13,10 +13,8 @@
 
 ## todo
 
--   anything with AdaIN means and variances being passed into modules as second and third parameters not getting tracked by autograd?
-
+-   log vars/gradients
 -   fid
--   make tfrecords for tpu training?
 
 ## structure
 
@@ -96,6 +94,8 @@
     -   temporarily just disabling AdaIN
 -   ones are real zeros are fake
 -   cant vmap over loss_g since the param dicts aren't vmappable
+-   anything with AdaIN means and variances being passed into modules as second and third parameters not getting tracked by autograd? - No, Flax's dot product attention is the same
+-   make tfrecords for tpu training? - nope
 
 ## replication
 
