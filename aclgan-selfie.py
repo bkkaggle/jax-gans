@@ -555,6 +555,19 @@ def main(args):
                     to_log['sample_s'] = wandb.Image(np.array(sample_s))
                     to_log['sample_t'] = wandb.Image(np.array(sample_t))
 
+                    # params = jax.tree_util.tree_leaves(g_params_sample)
+                    # keys = []
+                    # def traverse(prefix, tree):
+                    #     if type(tree) is not jax.interpreters.xla._DeviceArray:
+                    #         for child in list(tree.keys()):
+                    #             traverse(f"{prefix}/{child}", tree[child])
+                    #     else:
+                    #         keys.append(prefix)
+                    # traverse("parameters", g_params_sample)
+                    # to_log = {}
+                    # for (key, value) in zip(keys, params):
+                    #     to_log[key] = wandb.Histogram(value)
+
                 wandb.log(to_log)
 
             global_step += 1
